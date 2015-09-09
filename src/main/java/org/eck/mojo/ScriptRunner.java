@@ -7,11 +7,17 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.util.List;
 
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.plugins.annotations.ResolutionScope;
+import org.apache.maven.project.MavenProject;
 import org.eck.mojo.internal.Console;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.Function;
@@ -19,8 +25,11 @@ import org.mozilla.javascript.ImporterTopLevel;
 import org.mozilla.javascript.Script;
 import org.mozilla.javascript.ScriptableObject;
 
-@Mojo( name = "run")
+@Mojo( name = "run", requiresDependencyResolution=ResolutionScope.COMPILE_PLUS_RUNTIME)
 public class ScriptRunner extends AbstractMojo {
+
+    @Component
+    private MavenProject project;
 
     @Parameter( property = "run.task" )
     private String task;
@@ -43,6 +52,7 @@ public class ScriptRunner extends AbstractMojo {
         }
 
         String taskContent = readFile(taskFile);
+        resolveClasspath();
         runTask(taskContent, taskPath);
     }
 
@@ -65,6 +75,23 @@ public class ScriptRunner extends AbstractMojo {
         scriptableObject.setParentScope(global);
 
         function.call(cx, global, scriptableObject, new Object[0]);
+    }
+
+    @SuppressWarnings("rawtypes")
+    private void resolveClasspath() {
+        try {
+            List runtimeClasspathElements = project.getRuntimeClasspathElements();
+            URL[] runtimeUrls = new URL[runtimeClasspathElements.size()];
+            for (int i = 0; i < runtimeClasspathElements.size(); i++) {
+              String element = (String) runtimeClasspathElements.get(i);
+              runtimeUrls[i] = new File(element).toURI().toURL();
+            }
+            URLClassLoader newLoader = new URLClassLoader(runtimeUrls,
+            Thread.currentThread().getContextClassLoader());
+            Thread.currentThread().setContextClassLoader(newLoader);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
     }
 
      protected static String readFile(File file) {
